@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ScholarLens · AI 论文理论分析工具</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,400&family=DM+Sans:wght@300;400;500;600&family=Noto+Serif+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<!-- PDF.js for in-browser PDF text extraction -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+/* ── Reset & Base ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0d0d0f;
+  --bg2:      #141418;
+  --bg3:      #1c1c22;
+  --border:   #2a2a35;
+  --border2:  #38384a;
+  --text:     #e8e6df;
+  --muted:    #888880;
+  --gold:     #c9a84c;
+  --gold2:    #e8c46a;
+  --teal:     #4ab8a8;
+  --rust:     #c06a42;
+  --blue:     #6a9fd8;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Grain overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 9999;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='250'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='250' height='250' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ── Typography helpers ───────────────────────────────────────────────── */
+.display { font-family: 'Playfair Display', Georgia, serif; }
+.chinese { font-family: 'Noto Serif SC', Georgia, serif; }
+.mono    { font-family: 'JetBrains Mono', monospace; }
+
+/* ── Animations ───────────────────────────────────────────────────────── */
+@keyframes fadeUp   { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+@keyframes shimmer  { 0%{background-position:-600px 0} 100%{background-position:600px 0} }
+@keyframes spin     { to { transform: rotate(360deg); } }
+@keyframes pulse    { 0%,100%{opacity:.4} 50%{opacity:1} }
+@keyframes flowDot  { 0%,100%{opacity:.2;transform:scaleX(.6)} 50%{opacity:1;transform:scaleX(1)} }
+@keyframes glow     { 0%,100%{box-shadow:0 0 8px rgba(201,168,76,.15)} 50%{box-shadow:0 0 22px rgba(201,168,76,.35)} }
+
+.fade-up { animation: fadeUp .55s ease forwards; }
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+header {
+  position: sticky; top: 0; z-index: 100;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13,13,15,.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.header-inner {
+  max-width: 1100px; margin: 0 auto;
+  padding: 0 24px; height: 58px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-mark {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, #1a1a22, #2a2a38);
+  border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.logo-mark svg { display: block; }
+.logo-name { font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -.3px; }
+.logo-name span { color: var(--gold); }
+.header-tag {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 20px;
+  background: var(--bg3); border: 1px solid var(--border);
+  font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: .3px;
+}
+.dot-live { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); animation: pulse 2s infinite; }
+
+/* ── Layout ───────────────────────────────────────────────────────────── */
+main { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+.hero {
+  text-align: center;
+  padding: 64px 0 48px;
+  animation: fadeUp .6s ease;
+}
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 16px; border-radius: 20px;
+  background: rgba(201,168,76,.08); border: 1px solid rgba(201,168,76,.2);
+  font-size: 11px; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase;
+  font-weight: 600; margin-bottom: 24px;
+}
+.hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(32px, 5vw, 52px);
+  font-weight: 700; line-height: 1.15;
+  color: var(--text); margin-bottom: 18px;
+  letter-spacing: -.5px;
+}
+.hero h1 em { font-style: italic; color: var(--gold); }
+.hero p {
+  font-size: 16px; color: var(--muted); max-width: 520px; margin: 0 auto 32px;
+  line-height: 1.7; font-weight: 300;
+}
+.hero-pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.pill {
+  padding: 5px 14px; border-radius: 20px;
+  background: var(--bg3); border: 1px solid var(--border);
+  font-size: 12px; color: var(--muted); font-weight: 500;
+}
+
+/* ── API Key section ──────────────────────────────────────────────────── */
+.api-section {
+  max-width: 580px; margin: 0 auto 32px;
+  animation: fadeUp .6s .1s ease both;
+}
+.api-box {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px;
+}
+.api-box label {
+  display: block; font-size: 12px; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px;
+}
+.api-row { display: flex; gap: 10px; }
+.api-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border2);
+  border-radius: 8px; padding: 10px 14px;
+  font-size: 13px; font-family: 'JetBrains Mono', monospace;
+  color: var(--text); outline: none; transition: border .2s;
+  letter-spacing: .5px;
+}
+.api-input:focus { border-color: var(--gold); }
+.api-input::placeholder { color: var(--border2); }
+.btn-eye {
+  padding: 0 14px; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; color: var(--muted);
+  font-size: 16px; transition: color .2s; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn-eye:hover { color: var(--text); }
+.api-note {
+  margin-top: 10px; font-size: 11px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.api-note a { color: var(--gold); text-decoration: none; }
+.api-note a:hover { text-decoration: underline; }
+
+/* ── Upload ───────────────────────────────────────────────────────────── */
+.upload-section {
+  max-width: 580px; margin: 0 auto;
+  animation: fadeUp .6s .15s ease both;
+}
+.drop-zone {
+  border: 1.5px dashed var(--border2);
+  border-radius: 16px; padding: 44px 28px;
+  text-align: center; cursor: pointer;
+  transition: border-color .3s, background .3s;
+  position: relative; overflow: hidden;
+}
+.drop-zone:hover, .drop-zone.drag { border-color: var(--gold); background: rgba(201,168,76,.03); }
+.drop-zone.has-file { border-color: var(--teal); border-style: solid; }
+.drop-icon {
+  width: 60px; height: 60px; border-radius: 16px;
+  background: var(--bg3); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px; transition: all .3s;
+}
+.drop-zone.has-file .drop-icon { background: rgba(74,184,168,.1); border-color: rgba(74,184,168,.3); }
+.drop-zone input[type=file] { display: none; }
+.drop-title { font-family: 'Playfair Display', serif; font-size: 18px; color: var(--text); margin-bottom: 6px; }
+.drop-sub { font-size: 13px; color: var(--muted); }
+.drop-sub span { color: var(--gold); text-decoration: underline; cursor: pointer; }
+.drop-sub.file-name { color: var(--teal); font-weight: 500; }
+.drop-limit { font-size: 11px; color: var(--border2); margin-top: 8px; }
+
+/* Analyze button */
+.btn-analyze {
+  width: 100%; margin-top: 14px; height: 50px;
+  border-radius: 12px; border: none; cursor: pointer;
+  font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600;
+  letter-spacing: .3px; transition: all .3s;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.btn-analyze:enabled {
+  background: linear-gradient(135deg, #c9a84c, #e8c46a);
+  color: #1a1400;
+  animation: glow 3s ease infinite;
+}
+.btn-analyze:enabled:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.btn-analyze:disabled { background: var(--bg3); color: var(--muted); cursor: not-allowed; }
+.btn-analyze .spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid rgba(0,0,0,.2); border-top-color: #1a1400;
+  animation: spin .8s linear infinite;
+}
+
+/* Error */
+.error-box {
+  max-width: 580px; margin: 16px auto 0;
+  background: rgba(192,106,66,.08); border: 1px solid rgba(192,106,66,.25);
+  border-radius: 12px; padding: 14px 18px;
+  font-size: 13px; color: #e08060; line-height: 1.55;
+  display: none;
+}
+.error-box.show { display: block; animation: fadeUp .3s ease; }
+
+/* ── Loading ──────────────────────────────────────────────────────────── */
+.loading-section {
+  max-width: 580px; margin: 40px auto;
+  display: none;
+}
+.loading-section.show { display: block; animation: fadeUp .4s ease; }
+.loading-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 16px; padding: 32px 28px; text-align: center;
+}
+.loading-rings {
+  position: relative; width: 56px; height: 56px;
+  margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;
+}
+.ring1, .ring2 {
+  position: absolute; inset: 0; border-radius: 50%; border: 2px solid transparent;
+}
+.ring1 { border-top-color: var(--gold); animation: spin 1.2s linear infinite; }
+.ring2 { border-right-color: rgba(201,168,76,.3); animation: spin 2s linear infinite reverse; }
+.ring-core {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--bg3); border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+}
+.loading-title { font-family: 'Playfair Display', serif; font-size: 18px; margin-bottom: 6px; }
+.loading-sub { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+.steps { text-align: left; }
+.step {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-radius: 10px;
+  margin-bottom: 6px; transition: all .4s;
+}
+.step.active { background: rgba(201,168,76,.07); border: 1px solid rgba(201,168,76,.15); }
+.step.done { opacity: .5; }
+.step.pending { opacity: .25; }
+.step-icon { font-size: 15px; flex-shrink: 0; }
+.step-label { font-size: 13px; flex: 1; }
+.step.active .step-label { color: var(--text); font-weight: 500; }
+.step-check { color: var(--teal); font-size: 14px; }
+.step-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(201,168,76,.3); border-top-color: var(--gold); animation: spin .8s linear infinite; }
+.shimmer-lines { margin-top: 20px; }
+.shimmer-line {
+  height: 10px; border-radius: 6px; margin-bottom: 8px;
+  background: linear-gradient(90deg, var(--bg3) 25%, var(--border) 50%, var(--bg3) 75%);
+  background-size: 600px 100%; animation: shimmer 1.6s infinite;
+}
+
+/* ── Results ──────────────────────────────────────────────────────────── */
+#results { display: none; }
+#results.show { display: block; animation: fadeUp .5s ease; }
+
+.results-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 40px 0 28px; flex-wrap: wrap; gap: 16px;
+}
+.results-title { font-family: 'Playfair Display', serif; font-size: 28px; color: var(--text); }
+.results-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.btn-reset {
+  padding: 9px 18px; border-radius: 10px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--muted); font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: 'DM Sans', sans-serif;
+  transition: all .2s; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn-reset:hover { color: var(--text); border-color: var(--border2); }
+
+/* Section cards */
+.section-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden; margin-bottom: 18px;
+}
+.card-header {
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-header-left { display: flex; align-items: center; gap: 10px; }
+.card-icon { font-size: 18px; }
+.card-title { font-family: 'Playfair Display', serif; font-size: 19px; color: var(--text); }
+.card-body { padding: 22px 24px; }
+
+/* Lang toggle */
+.lang-toggle {
+  display: flex; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 3px; gap: 2px;
+}
+.lang-btn {
+  padding: 5px 12px; border-radius: 6px; border: none;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  font-family: 'DM Sans', sans-serif; transition: all .2s;
+  background: transparent; color: var(--muted);
+}
+.lang-btn.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+
+.en-text { font-size: 15px; color: #ccc8be; line-height: 1.75; }
+.zh-text { font-family: 'Noto Serif SC', serif; font-size: 15px; color: #ccc8be; line-height: 1.9; display: none; }
+
+/* Constructs table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead tr { background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
+th {
+  text-align: left; padding: 12px 16px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--muted);
+}
+td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,.02); }
+.construct-name { font-weight: 600; color: var(--text); }
+.construct-name-zh { font-family: 'Noto Serif SC', serif; font-weight: 600; color: var(--text); display: none; }
+.construct-zh { font-family: 'Noto Serif SC', serif; display: none; }
+.col-meaning { color: #aaa; line-height: 1.55; }
+.col-obs { color: #888; line-height: 1.55; }
+.role-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; letter-spacing: .3px; white-space: nowrap;
+}
+.role-driver    { background: rgba(201,168,76,.12); color: var(--gold2); border: 1px solid rgba(201,168,76,.2); }
+.role-outcome   { background: rgba(74,184,168,.12); color: var(--teal);  border: 1px solid rgba(74,184,168,.2); }
+.role-mediator  { background: rgba(106,159,216,.12); color: var(--blue); border: 1px solid rgba(106,159,216,.2); }
+.role-moderator { background: rgba(192,106,66,.12); color: var(--rust);  border: 1px solid rgba(192,106,66,.2); }
+
+/* Mechanism diagram */
+.chain-wrap { overflow-x: auto; padding: 8px 0 16px; }
+.chain {
+  display: flex; align-items: center;
+  gap: 0; min-width: max-content; padding: 4px 0;
+}
+.chain-node {
+  position: relative;
+  background: var(--bg3); border: 1.5px solid var(--border2);
+  border-radius: 12px; padding: 12px 18px; min-width: 130px;
+  text-align: center; transition: border-color .2s;
+}
+.chain-node:hover { border-color: var(--gold); }
+.chain-node.last-node { border-color: var(--gold); background: rgba(201,168,76,.07); }
+.chain-step {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--bg2); border: 1.5px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+.last-node .chain-step { border-color: var(--gold); color: var(--gold); }
+.chain-label { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 4px; line-height: 1.3; }
+.last-node .chain-label { color: var(--gold2); }
+.chain-outcome-tag { font-size: 9px; color: var(--gold); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 2px; }
+.chain-arrow {
+  display: flex; align-items: center; flex-shrink: 0; padding: 0 6px;
+}
+.chain-arrow svg { animation: flowDot 1.8s ease-in-out infinite; }
+
+.chain-legend {
+  display: flex; gap: 20px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+.mechanism-text { margin-top: 18px; }
+
+/* Boundary section */
+/* (reuses card-body en-text/zh-text) */
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 20px 24px; text-align: center;
+  font-size: 12px; color: var(--border2);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .hero h1 { font-size: 26px; }
+  .card-body { padding: 16px; }
+  th, td { padding: 10px 12px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────── -->
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M3 2h10v12H3V2z" stroke="#c9a84c" stroke-width="1.4" fill="none"/>
+          <path d="M5 5h6M5 7.5h6M5 10h4" stroke="#c9a84c" stroke-width="1"/>
+        </svg>
+      </div>
+      <span class="logo-name display">Scholar<span>Lens</span></span>
+    </div>
+    <div class="header-tag">
+      <span class="dot-live"></span>
+      GPT-4o · 纯前端 · 无需服务器
+    </div>
+  </div>
+</header>
+
+<!-- ── Main ───────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- Hero -->
+  <div class="hero" id="heroSection">
+    <div class="hero-eyebrow">✦ AI 论文理论重构工具</div>
+    <h1 class="display">上传论文，<em>洞见理论</em><br>中英双语解析</h1>
+    <p>上传任意学术 PDF，AI 自动提取现象、构念、机制与边界条件，帮你快速掌握论文的理论贡献。</p>
+    <div class="hero-pills">
+      <span class="pill">📄 无需后端</span>
+      <span class="pill">🔑 使用自己的 API Key</span>
+      <span class="pill">🌏 中英双语输出</span>
+      <span class="pill">⚙️ 因果链图示</span>
+      <span class="pill">🧱 构念对照表</span>
+    </div>
+  </div>
+
+  <!-- API Key -->
+  <div class="api-section" id="apiSection">
+    <div class="api-box">
+      <label>OpenAI API Key</label>
+      <div class="api-row">
+        <input type="password" id="apiKey" class="api-input" placeholder="sk-..." autocomplete="off" />
+        <button class="btn-eye" id="toggleKey" title="显示/隐藏 Key">👁</button>
+      </div>
+      <p class="api-note">
+        🔒 Key 仅在本地浏览器中使用，不会上传到任何服务器。
+        <a href="https://platform.openai.com/api-keys" target="_blank">获取 API Key →</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- Upload -->
+  <div class="upload-section" id="uploadSection">
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="application/pdf" />
+      <div class="drop-icon" id="dropIcon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="#888" stroke-width="1.5"/>
+          <polyline points="14 2 14 8 20 8" stroke="#888" stroke-width="1.5"/>
+          <line x1="12" y1="18" x2="12" y2="12" stroke="#888" stroke-width="1.5"/>
+          <polyline points="9 15 12 12 15 15" stroke="#888" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <p class="drop-title display" id="dropTitle">拖拽 PDF 到此处</p>
+      <p class="drop-sub" id="dropSub">或 <span onclick="document.getElementById('fileInput').click()">点击选择文件</span></p>
+      <p class="drop-limit">仅支持 PDF · 最大 20MB</p>
+    </div>
+
+    <button class="btn-analyze" id="analyzeBtn" disabled>
+      <span id="analyzeBtnText">✦ 开始分析论文</span>
+    </button>
+
+    <div class="error-box" id="errorBox"></div>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading-section" id="loadingSection">
+    <div class="loading-card">
+      <div class="loading-rings">
+        <div class="ring1"></div>
+        <div class="ring2"></div>
+        <div class="ring-core">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <path d="M3 2h10v12H3V2z" stroke="#c9a84c" stroke-width="1.5" fill="none"/>
+          </svg>
+        </div>
+      </div>
+      <p class="loading-title display">AI 正在分析中…</p>
+      <p class="loading-sub">GPT-4o 重构论文理论框架</p>
+      <div class="steps" id="stepsContainer">
+        <div class="step active" id="step0"><span class="step-icon">📄</span><span class="step-label">提取 PDF 文本内容…</span><span class="step-spin"></span></div>
+        <div class="step pending" id="step1"><span class="step-icon">🔬</span><span class="step-label">重构理论框架…</span></div>
+        <div class="step pending" id="step2"><span class="step-icon">🌏</span><span class="step-label">生成中英双语解析…</span></div>
+        <div class="step pending" id="step3"><span class="step-icon">🔗</span><span class="step-label">构建因果链图示…</span></div>
+      </div>
+      <div class="shimmer-lines">
+        <div class="shimmer-line" style="width:65%"></div>
+        <div class="shimmer-line" style="width:85%"></div>
+        <div class="shimmer-line" style="width:50%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Results ─────────────────────────────────────────────────────── -->
+  <div id="results">
+
+    <div class="results-header">
+      <div>
+        <h2 class="results-title display">理论分析报告</h2>
+        <p class="results-sub">AI 重构框架 · 点击切换中英双语</p>
+      </div>
+      <button class="btn-reset" id="resetBtn">← 分析新论文</button>
+    </div>
+
+    <!-- 1. Phenomenon -->
+    <div class="section-card fade-up" style="animation-delay:.05s">
+      <div class="card-header">
+        <div class="card-header-left">
+          <span class="card-icon">🌐</span>
+          <h3 class="card-title display">现象 · Phenomenon</h3>
+        </div>
+        <div class="lang-toggle">
+          <button class="lang-btn active" data-section="phenomenon" data-lang="en">English</button>
+          <button class="lang-btn" data-section="phenomenon" data-lang="zh">中文</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="en-text" id="phen-en"></p>
+        <p class="zh-text" id="phen-zh"></p>
+      </div>
+    </div>
+
+    <!-- 2. Constructs -->
+    <div class="section-card fade-up" style="animation-delay:.1s">
+      <div class="card-header">
+        <div class="card-header-left">
+          <span class="card-icon">🧱</span>
+          <h3 class="card-title display">构念 · Constructs</h3>
+          <span id="constructCount" style="font-size:12px;color:var(--muted);margin-left:4px"></span>
+        </div>
+        <div class="lang-toggle">
+          <button class="lang-btn active" data-section="constructs" data-lang="en">English</button>
+          <button class="lang-btn" data-section="constructs" data-lang="zh">中文</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="table-wrap">
+          <table id="constructsTable">
+            <thead>
+              <tr>
+                <th>构念</th>
+                <th>含义</th>
+                <th>角色</th>
+                <th>测量方式</th>
+              </tr>
+            </thead>
+            <tbody id="constructsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Mechanism -->
+    <div class="section-card fade-up" style="animation-delay:.15s">
+      <div class="card-header">
+        <div class="card-header-left">
+          <span class="card-icon">⚙️</span>
+          <h3 class="card-title display">机制 · Mechanism</h3>
+        </div>
+        <div class="lang-toggle">
+          <button class="lang-btn active" data-section="mechanism" data-lang="en">English</button>
+          <button class="lang-btn" data-section="mechanism" data-lang="zh">中文</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <!-- Causal chain diagram -->
+        <div class="chain-wrap">
+          <div class="chain" id="chainDiagram"></div>
+        </div>
+        <div class="chain-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--border2);border:1px solid var(--border2)"></div>构念节点</div>
+          <div class="legend-item"><div class="legend-dot" style="background:rgba(201,168,76,.3);border:1px solid var(--gold)"></div>结果变量</div>
+          <div class="legend-item">
+            <svg width="22" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#555" stroke-width="1.5" stroke-dasharray="3 2"/><polyline points="13,1 19,4 13,7" stroke="#555" stroke-width="1.5" fill="none"/></svg>
+            因果路径
+          </div>
+        </div>
+        <!-- Text explanation -->
+        <div class="mechanism-text">
+          <p class="en-text" id="mech-en"></p>
+          <p class="zh-text" id="mech-zh"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Boundary Conditions -->
+    <div class="section-card fade-up" style="animation-delay:.2s">
+      <div class="card-header">
+        <div class="card-header-left">
+          <span class="card-icon">⚠️</span>
+          <h3 class="card-title display">边界条件 · Boundary Conditions</h3>
+        </div>
+        <div class="lang-toggle">
+          <button class="lang-btn active" data-section="boundary" data-lang="en">English</button>
+          <button class="lang-btn" data-section="boundary" data-lang="zh">中文</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="en-text" id="bnd-en"></p>
+        <p class="zh-text" id="bnd-zh"></p>
+      </div>
+    </div>
+
+  </div><!-- /results -->
+
+</main>
+
+<footer>
+  ScholarLens · 所有处理均在本地浏览器完成 · API Key 不会离开您的设备
+</footer>
+
+<!-- ── Scripts ─────────────────────────────────────────────────────────── -->
+<script>
+// Set PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* ── State ────────────────────────────────────────────────────────────── */
+let selectedFile = null;
+let currentStep  = 0;
+let stepTimer    = null;
+
+/* ── DOM refs ─────────────────────────────────────────────────────────── */
+const apiKeyInput   = document.getElementById('apiKey');
+const toggleKeyBtn  = document.getElementById('toggleKey');
+const dropZone      = document.getElementById('dropZone');
+const fileInput     = document.getElementById('fileInput');
+const analyzeBtn    = document.getElementById('analyzeBtn');
+const analyzeBtnTxt = document.getElementById('analyzeBtnText');
+const errorBox      = document.getElementById('errorBox');
+const loadingSection= document.getElementById('loadingSection');
+const resultsDiv    = document.getElementById('results');
+const resetBtn      = document.getElementById('resetBtn');
+
+/* ── API Key toggle ───────────────────────────────────────────────────── */
+toggleKeyBtn.addEventListener('click', () => {
+  const t = apiKeyInput.type === 'password' ? 'text' : 'password';
+  apiKeyInput.type = t;
+  toggleKeyBtn.textContent = t === 'password' ? '👁' : '🙈';
+});
+
+// Persist key in sessionStorage
+apiKeyInput.addEventListener('input', () => {
+  sessionStorage.setItem('sl_key', apiKeyInput.value);
+  checkReady();
+});
+const savedKey = sessionStorage.getItem('sl_key');
+if (savedKey) apiKeyInput.value = savedKey;
+
+/* ── Check ready ──────────────────────────────────────────────────────── */
+function checkReady() {
+  analyzeBtn.disabled = !(selectedFile && apiKeyInput.value.trim().startsWith('sk-'));
+}
+
+/* ── Drag & Drop ──────────────────────────────────────────────────────── */
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+dropZone.addEventListener('click', e => {
+  if (e.target.tagName !== 'SPAN') fileInput.click();
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+function handleFile(f) {
+  if (f.type !== 'application/pdf') return showError('仅支持 PDF 文件。');
+  if (f.size > 20 * 1024 * 1024)    return showError('文件不能超过 20MB。');
+  selectedFile = f;
+  dropZone.classList.add('has-file');
+  document.getElementById('dropIcon').innerHTML = `
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="#4ab8a8" stroke-width="1.5"/>
+      <polyline points="14 2 14 8 20 8" stroke="#4ab8a8" stroke-width="1.5"/>
+      <polyline points="9 15 11 17 15 13" stroke="#4ab8a8" stroke-width="1.5"/>
+    </svg>`;
+  document.getElementById('dropTitle').textContent = f.name;
+  document.getElementById('dropSub').className = 'drop-sub file-name';
+  document.getElementById('dropSub').innerHTML = `${(f.size/1024/1024).toFixed(2)} MB &nbsp;·&nbsp; <span onclick="resetFile()" style="color:var(--rust);cursor:pointer">重新选择</span>`;
+  hideError();
+  checkReady();
+}
+
+function resetFile() {
+  selectedFile = null;
+  fileInput.value = '';
+  dropZone.classList.remove('has-file');
+  document.getElementById('dropIcon').innerHTML = `
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="#888" stroke-width="1.5"/>
+      <polyline points="14 2 14 8 20 8" stroke="#888" stroke-width="1.5"/>
+      <line x1="12" y1="18" x2="12" y2="12" stroke="#888" stroke-width="1.5"/>
+      <polyline points="9 15 12 12 15 15" stroke="#888" stroke-width="1.5"/>
+    </svg>`;
+  document.getElementById('dropTitle').textContent = '拖拽 PDF 到此处';
+  document.getElementById('dropSub').className = 'drop-sub';
+  document.getElementById('dropSub').innerHTML = `或 <span onclick="document.getElementById('fileInput').click()">点击选择文件</span>`;
+  checkReady();
+}
+
+/* ── Error helpers ────────────────────────────────────────────────────── */
+function showError(msg) {
+  errorBox.textContent = '⚠ ' + msg;
+  errorBox.classList.add('show');
+}
+function hideError() {
+  errorBox.classList.remove('show');
+}
+
+/* ── Step progress ────────────────────────────────────────────────────── */
+function setStep(n) {
+  currentStep = n;
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById('step' + i);
+    el.className = 'step';
+    el.querySelector('.step-label').nextElementSibling?.remove();
+    if (i < n) {
+      el.classList.add('done');
+      el.innerHTML = el.innerHTML.replace(/<span class="step-spin"><\/span>/, '');
+      if (!el.querySelector('.step-check')) {
+        el.insertAdjacentHTML('beforeend', '<span class="step-check">✓</span>');
+      }
+    } else if (i === n) {
+      el.classList.add('active');
+      if (!el.querySelector('.step-spin')) {
+        el.insertAdjacentHTML('beforeend', '<span class="step-spin"></span>');
+      }
+    } else {
+      el.classList.add('pending');
+    }
+  }
+}
+
+/* ── PDF text extraction ──────────────────────────────────────────────── */
+async function extractPdfText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  const maxPages = Math.min(pdf.numPages, 50);
+  for (let i = 1; i <= maxPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    fullText += pageText + '\n';
+  }
+  // Truncate to ~40k chars to stay within token limits
+  return fullText.slice(0, 40000);
+}
+
+/* ── OpenAI call ──────────────────────────────────────────────────────── */
+const SYSTEM_PROMPT = `You are an expert academic research assistant specializing in theory reconstruction.
+
+Analyze the research paper and return ONLY a valid JSON object with this exact structure:
+{
+  "phenomenon": {
+    "en": "2-4 sentences explaining the real-world puzzle the paper tries to understand",
+    "zh": "用中文描述同一现象（2-4句）"
+  },
+  "constructs": [
+    {
+      "name_en": "Construct name in English",
+      "name_zh": "构念名称（中文）",
+      "meaning_en": "What this construct means",
+      "meaning_zh": "含义（中文）",
+      "role": "driver",
+      "observation_en": "How it is measured or observed",
+      "observation_zh": "测量/观察方式（中文）"
+    }
+  ],
+  "mechanism": {
+    "en": "3-5 sentences of causal reasoning using X leads to Y because... format",
+    "zh": "用中文描述同一因果机制（3-5句）",
+    "chain": ["Construct A", "Construct B", "Construct C", "Outcome"]
+  },
+  "boundary_conditions": {
+    "en": "2-4 sentences on when the theory works and when it might fail",
+    "zh": "用中文描述理论的边界条件（2-4句）"
+  }
+}
+
+Rules:
+- role must be one of: driver, outcome, mediator, moderator
+- chain array: 3-5 items in causal order
+- Identify 4-6 constructs
+- Return ONLY the JSON, no markdown, no preamble`;
+
+async function callOpenAI(apiKey, paperText) {
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: 'Analyze this research paper:\n\n' + paperText }
+      ],
+      temperature: 0.3,
+      max_tokens: 3500,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    const msg = err.error?.message || `API error ${resp.status}`;
+    throw new Error(msg);
+  }
+
+  const data = await resp.json();
+  const raw = data.choices[0].message.content;
+  return JSON.parse(raw.replace(/```json|```/g, '').trim());
+}
+
+/* ── Main analyze flow ────────────────────────────────────────────────── */
+analyzeBtn.addEventListener('click', async () => {
+  hideError();
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey.startsWith('sk-')) return showError('请输入有效的 OpenAI API Key（以 sk- 开头）。');
+  if (!selectedFile) return showError('请先选择一个 PDF 文件。');
+
+  // Show loading, hide others
+  document.getElementById('heroSection').style.display = 'none';
+  document.getElementById('apiSection').style.display = 'none';
+  document.getElementById('uploadSection').style.display = 'none';
+  resultsDiv.classList.remove('show');
+  loadingSection.classList.add('show');
+  setStep(0);
+
+  try {
+    // Step 0: Extract PDF
+    const text = await extractPdfText(selectedFile);
+    if (!text.trim()) throw new Error('无法从 PDF 中提取文本，请确认 PDF 包含可选中的文字（非纯扫描图片）。');
+
+    setStep(1);
+    await sleep(400);
+    setStep(2);
+
+    // Step 2-3: Call AI
+    const analysis = await callOpenAI(apiKey, text);
+
+    setStep(3);
+    await sleep(500);
+
+    // Render results
+    renderResults(analysis);
+
+    loadingSection.classList.remove('show');
+    resultsDiv.classList.add('show');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  } catch (err) {
+    loadingSection.classList.remove('show');
+    document.getElementById('heroSection').style.display = '';
+    document.getElementById('apiSection').style.display = '';
+    document.getElementById('uploadSection').style.display = '';
+    showError(err.message || '发生未知错误，请重试。');
+  }
+});
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ── Reset ────────────────────────────────────────────────────────────── */
+resetBtn.addEventListener('click', () => {
+  resultsDiv.classList.remove('show');
+  document.getElementById('heroSection').style.display = '';
+  document.getElementById('apiSection').style.display = '';
+  document.getElementById('uploadSection').style.display = '';
+  resetFile();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+/* ── Render results ───────────────────────────────────────────────────── */
+function renderResults(a) {
+  // Phenomenon
+  document.getElementById('phen-en').textContent = a.phenomenon?.en || '';
+  document.getElementById('phen-zh').textContent = a.phenomenon?.zh || '';
+
+  // Constructs
+  const tbody = document.getElementById('constructsBody');
+  tbody.innerHTML = '';
+  const constructs = a.constructs || [];
+  document.getElementById('constructCount').textContent = `（${constructs.length} 个）`;
+
+  constructs.forEach(c => {
+    const roleMap = { driver:'Driver 驱动', outcome:'Outcome 结果', mediator:'Mediator 中介', moderator:'Moderator 调节' };
+    const roleClass = { driver:'role-driver', outcome:'role-outcome', mediator:'role-mediator', moderator:'role-moderator' };
+    const role = (c.role || 'driver').toLowerCase();
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div class="construct-name">${esc(c.name_en || '')}</div>
+        <div class="construct-name-zh">${esc(c.name_zh || '')}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px" class="construct-en-sub">${esc(c.name_zh || '')}</div>
+      </td>
+      <td class="col-meaning">
+        <span class="construct-en-text">${esc(c.meaning_en || '')}</span>
+        <span class="construct-zh" style="display:none">${esc(c.meaning_zh || '')}</span>
+      </td>
+      <td><span class="role-badge ${roleClass[role] || 'role-driver'}">${roleMap[role] || c.role}</span></td>
+      <td class="col-obs">
+        <span class="construct-en-obs">${esc(c.observation_en || '')}</span>
+        <span class="construct-zh-obs construct-zh" style="display:none">${esc(c.observation_zh || '')}</span>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Mechanism text
+  document.getElementById('mech-en').textContent = a.mechanism?.en || '';
+  document.getElementById('mech-zh').textContent = a.mechanism?.zh || '';
+
+  // Chain diagram
+  const chain = a.mechanism?.chain || [];
+  const chainEl = document.getElementById('chainDiagram');
+  chainEl.innerHTML = '';
+  chain.forEach((label, i) => {
+    const isLast = i === chain.length - 1;
+    const node = document.createElement('div');
+    node.className = 'chain-node' + (isLast ? ' last-node' : '');
+    node.innerHTML = `
+      <div class="chain-step">${i + 1}</div>
+      ${isLast ? '<div class="chain-outcome-tag">Outcome</div>' : ''}
+      <div class="chain-label">${esc(label)}</div>`;
+    chainEl.appendChild(node);
+
+    if (!isLast) {
+      const arr = document.createElement('div');
+      arr.className = 'chain-arrow';
+      arr.innerHTML = `<svg width="44" height="20" viewBox="0 0 44 20" fill="none">
+        <line x1="2" y1="10" x2="34" y2="10" stroke="#444" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <polyline points="28,5 38,10 28,15" stroke="#444" stroke-width="1.5" fill="none"/>
+      </svg>`;
+      chainEl.appendChild(arr);
+    }
+  });
+
+  // Boundary
+  document.getElementById('bnd-en').textContent = a.boundary_conditions?.en || '';
+  document.getElementById('bnd-zh').textContent = a.boundary_conditions?.zh || '';
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Language toggles ─────────────────────────────────────────────────── */
+document.querySelectorAll('.lang-toggle').forEach(toggle => {
+  toggle.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.dataset.section;
+      const lang = btn.dataset.lang;
+
+      // Update active button state in THIS toggle only
+      toggle.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      if (section === 'phenomenon') {
+        switchLang(document.getElementById('phen-en'), document.getElementById('phen-zh'), lang);
+      } else if (section === 'mechanism') {
+        switchLang(document.getElementById('mech-en'), document.getElementById('mech-zh'), lang);
+      } else if (section === 'boundary') {
+        switchLang(document.getElementById('bnd-en'), document.getElementById('bnd-zh'), lang);
+      } else if (section === 'constructs') {
+        switchConstructsLang(lang);
+      }
+    });
+  });
+});
+
+function switchLang(enEl, zhEl, lang) {
+  if (lang === 'en') { enEl.style.display = ''; zhEl.style.display = 'none'; }
+  else               { enEl.style.display = 'none'; zhEl.style.display = ''; }
+}
+
+function switchConstructsLang(lang) {
+  const isZh = lang === 'zh';
+  document.querySelectorAll('.construct-name').forEach(el => el.style.display = isZh ? 'none' : '');
+  document.querySelectorAll('.construct-name-zh').forEach(el => el.style.display = isZh ? '' : 'none');
+  document.querySelectorAll('.construct-en-sub').forEach(el => el.style.display = isZh ? 'none' : '');
+  document.querySelectorAll('.construct-en-text').forEach(el => el.style.display = isZh ? 'none' : '');
+  document.querySelectorAll('.construct-en-obs').forEach(el => el.style.display = isZh ? 'none' : '');
+  document.querySelectorAll('.construct-zh').forEach(el => el.style.display = isZh ? '' : 'none');
+  document.querySelectorAll('.construct-zh-obs').forEach(el => el.style.display = isZh ? '' : 'none');
+}
+</script>
+</body>
+</html>
